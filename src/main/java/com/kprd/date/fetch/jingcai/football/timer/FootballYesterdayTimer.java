@@ -1,0 +1,33 @@
+package com.kprd.date.fetch.jingcai.football.timer;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+import com.kprd.date.fetch.jingcai.football.JingCaiMixYesterday;
+import com.kprd.date.fetch.wubai.football.WubaiMixYesterday;
+
+public class FootballYesterdayTimer {
+	
+	public static void proceedFunctions() {
+		JingCaiMixYesterday.getYesterDay(null, null);
+		JingCaiMixYesterday.get5Data(null,null);
+		WubaiMixYesterday.getZids(false);
+	}
+	
+	public static void main(String[] args) {
+		while(true) {
+			try {
+				long startTime = System.currentTimeMillis();
+				proceedFunctions();
+				long endTime = System.currentTimeMillis();
+				System.out.println("程序运行时间：" + (endTime - startTime) + "ms");
+				System.out.println("程序运行时间：" + (endTime - startTime) /1000 /60 + "m");
+				System.out.println("完成时间" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date())); 
+				System.out.println("执行完成一遍，5分钟执行下一次");
+				Thread.sleep(1000*60*5);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+	}
+}

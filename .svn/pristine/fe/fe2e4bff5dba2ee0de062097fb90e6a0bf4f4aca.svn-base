@@ -1,0 +1,608 @@
+package com.kprd.date.fetch.jingcai.football;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+
+import org.apache.http.HttpEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.springframework.util.StringUtils;
+
+import com.kprd.common.utils.IDUtils;
+import com.kprd.common.utils.JsonUtils;
+import com.kprd.common.utils.ObjectHelper;
+import com.kprd.date.lq.update.Main;
+import com.kprd.date.util.JedisUtilForFetch;
+import com.kprd.date.util.UtilBag;
+import com.kprd.newliansai.mapper.FoMixMapper;
+import com.kprd.newliansai.mapper.FoTeamMapper;
+import com.kprd.newliansai.pojo.FoMix;
+import com.kprd.newliansai.pojo.FoMixExample;
+import com.kprd.newliansai.pojo.FoTeam;
+import com.kprd.newliansai.pojo.FoTeamExample;
+
+/**
+ * 竞彩官网采集
+ * @author Administrator
+ * 
+ * 1.先执行getJingCaiData()获取当日对阵数据（单关信息，分析信息除外）
+ * 
+ * 2.在独立执行getFullJson()获取当日单关信息
+ *
+ */
+public class JingCaiMixToday {
+	//混合过关
+	private static String baseUrl = "http://info.sporttery.cn/interface/interface_mixed.php?action=fb_list&pke=0.004698456683856156&_=yy";
+	//球队idurl
+	private static String teamUrl = "http://i.sporttery.cn/api/fb_match_info/get_match_info?mid=xx&_=yy";
+	//队伍详情地址
+	private static String teamDetailUrl = "http://i.sporttery.cn/api/fb_match_info/get_team_data/?tid=xx&_=yy";
+	//对阵
+	private static String vsUrl = "http://i.sporttery.cn/odds_calculator/get_odds?i_format=json&poolcode[]=hhad&poolcode[]=had&_=146406";
+	//对阵mapper
+	static FoMixMapper mvsMapper = Main.applicationContext.getBean(FoMixMapper.class);
+	//队伍mapper
+	static FoTeamMapper teamMapper = Main.applicationContext.getBean(FoTeamMapper.class);
+
+	/**
+	 * 处理请求到的json
+	 * @return
+	 */
+	public static String handleJson(String urlStr) {  
+		String html = "";
+        @SuppressWarnings("unused")
+		int i = 0;  
+        StringBuffer sb = new StringBuffer("");  
+        URL url;  
+        try {  
+            url = new URL(urlStr);  
+            BufferedReader br = new BufferedReader(new InputStreamReader(url.openStream(), "gbk"));  
+            String s = "";  
+            while ((s = br.readLine()) != null) {  
+                i++;  
+                sb.append(s + "\r\n");  
+            }  
+        } catch (Exception e) {  
+            e.printStackTrace();  
+        }  
+        html = sb.toString();
+        if(ObjectHelper.isNotEmpty(sb.toString())) {
+    		html = html.substring(html.indexOf("data")+5, html.length());
+    		html = html.split(";")[0];
+    		return html;
+    	}
+        return sb.toString();  
+    }
+	
+	/**
+	 * 获取单关信息
+	 */
+	public static void getFullJson() {
+		String html = "";
+		try {
+			CloseableHttpClient httpclient = HttpClients.createDefault();
+			HttpGet httpget = new HttpGet(vsUrl);
+            CloseableHttpResponse response = httpclient.execute(httpget);
+            try {
+            	// 获取响应实体    
+                HttpEntity entity = response.getEntity();  
+                if (entity != null && response.getStatusLine().getStatusCode() == 200) {
+                	html = UtilBag.handleEntityCharset(entity, "gb2312");
+                	html = UtilBag.unicode2String(html);
+                	html = html.replace("\\/", "/");
+                	FoMixExample fmEx = new FoMixExample();
+        			String day = UtilBag.dateUtil(0);
+        			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        			String today = day + " 11:59:59";
+        			Date kyo = sdf.parse(today);
+        			fmEx.createCriteria().andStarttimeGreaterThan(kyo);
+        			fmEx.setOrderByClause(" idUnique asc");
+        			List<FoMix> mvsList = mvsMapper.selectByExample(fmEx);
+        			System.out.println("今天" + mvsList.size() + "场比赛");
+                	JSONObject jsonObj = JSONObject.fromObject(html);
+                	Object data = jsonObj.get("data");
+                	System.out.println(data);
+                	if(ObjectHelper.isNotEmpty(mvsList)) {
+                		for(FoMix mix : mvsList) {
+                			System.out.println(mix.getHomefullname());
+                			if(ObjectHelper.isNotEmpty(data)) {
+                				Object dataVs = JSONObject.fromObject(data).get("_" + mix.getJingcaiid());//hhad
+                				Object hhad = JSONObject.fromObject(dataVs).get("hhad");
+                				if(ObjectHelper.isNotEmpty(hhad)) {
+                					Object hhSingle = JSONObject.fromObject(hhad).get("single");
+                					mix.setRqspfsingle(hhSingle.toString());
+                				}
+                				Object had = JSONObject.fromObject(dataVs).get("had");
+                				if(ObjectHelper.isNotEmpty(had)) {
+                					Object single = JSONObject.fromObject(had).get("single");
+                					mix.setSpfsingle(single.toString());
+                				}
+                				//胜平负开赛状态和让球胜平负开赛状态
+                				if(ObjectHelper.isNotEmpty(hhad)) {
+                					mix.setIsrqspfopen(JSONObject.fromObject(hhad).get("cbt").toString());
+                				}
+                				if(ObjectHelper.isNotEmpty(had)) {
+                					mix.setIsspfopen(JSONObject.fromObject(had).get("cbt").toString());
+                				}
+                				
+                				mvsMapper.updateByPrimaryKeySelective(mix);
+                				String td = new SimpleDateFormat("yyyy-MM-dd").format(new Date()).replace("-", "");
+                				JedisUtilForFetch.remove(6,td + "gamecenter");
+                        	}
+                		}
+                	}
+                }	
+			} finally {
+				response.close();
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	/**
+	 * 通过历史页面获取idunique
+	 * @param date
+	 * @param num
+	 * @return
+	 */
+	private static String getRightDate(String date,String num) {
+		String rightDate = null;
+		try {
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+			String w = UtilBag.getWeekOfDate(sdf.parse(date));
+			w = w.substring(2,3);
+			w = UtilBag.getWeekDay(w);
+			if(num.equals(w)) {
+				rightDate = date;
+				return rightDate;
+			} else {
+				rightDate = UtilBag.dateUtilWithDate(-1, sdf.parse(date));
+				getRightDate(rightDate, num);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return rightDate;
+	}
+	
+	/**
+	 * 获取竞彩数据
+	 */
+	@SuppressWarnings("rawtypes")
+	public static void getJingCaiData() {
+		baseUrl = baseUrl.replace("yy", String.valueOf(System.currentTimeMillis()));
+		//混合过关
+		String html = handleJson(baseUrl);
+		if(ObjectHelper.isEmpty(html)) {
+			try {
+				System.out.println("未知异常，获取json为null，等待1分钟");
+				Thread.sleep(1000*60);
+				getJingCaiData();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		System.out.println("今日混合过关数据" + html);
+		//比分页面
+		if(!StringUtils.isEmpty(html)) {
+			try {
+				List<List> fatherList = JsonUtils.jsonToList(html, List.class);
+				int counter = 1;
+				for(List list : fatherList) {
+					System.out.println("共" + fatherList.size() + "条,第" + counter++ + "条");
+					FoMix mvs = new FoMix();
+					for(int i=0;i<list.size();i++) {
+						List sonList = List.class.cast(list.get(i));
+						if(ObjectHelper.isNotEmpty(sonList)) {
+							switch (i) {
+							case 0: 
+								System.out.println(sonList);
+								String code = (String) sonList.get(0);
+								//拿到编号的前提下再执行下面的
+								if(!StringUtils.isEmpty(code) && code.indexOf("周") > -1) {
+									String week = code.substring(code.indexOf("周")+1,code.indexOf("周")+2);
+									String num = UtilBag.getWeekDay(week);
+									if(!StringUtils.isEmpty(num)) {
+										String time = (String) sonList.get(3);
+										SimpleDateFormat sdff = new SimpleDateFormat("yyyy");
+										time = sdff.format(new Date()).substring(0,2) + time + ":00";
+										SimpleDateFormat ttt = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+										Date startTime = ttt.parse(time);
+										Date endTime = getEndTime(startTime);
+										String yearDate = getRightDate(sonList.get(11).toString(), num);
+										yearDate = yearDate.replace("-", "");
+										code = yearDate + num + code.substring(2);
+										if("201707215007".equals(code)) {
+											System.out.println();
+										}
+										String team = (String) sonList.get(2);
+										if(!StringUtils.isEmpty(team)) {
+											String[] teams = team.split("\\$");
+											if(teams.length > 1) {
+												mvs.setHomeshortname(teams[0]);
+												mvs.setAwayshortname(teams[2]);
+												mvs.setRqs(teams[1]);
+											}
+										}
+										
+										String fullH = (String)sonList.get(7);
+										if(!StringUtils.isEmpty(fullH)) {
+											mvs.setHomefullname(fullH);
+										}
+										String fullA = (String)sonList.get(8);
+										if(!StringUtils.isEmpty(fullA)) {
+											mvs.setAwayfullname(fullA);
+										}
+										
+										mvs.setIdunique(code);
+										mvs.setLeaguename(String.valueOf(sonList.get(1)));
+										mvs.setLeaguecolor(String.valueOf(sonList.get(5)));
+										mvs.setStarttime(startTime);
+										mvs.setJingcaiid(String.valueOf(sonList.get(4)));
+										mvs.setHomerank(String.valueOf(sonList.get(9)));
+										mvs.setAwayrank(String.valueOf(sonList.get(10)));
+										mvs.setEndtime(endTime);
+									}
+								}
+								break;
+							case 1://让球胜平负
+//								System.out.println(sonList);
+								if(ObjectHelper.isNotEmpty(sonList)) {
+									mvs.setRqspfs(sonList.get(0).toString());
+									mvs.setRqspfp(sonList.get(1).toString());
+									mvs.setRqspff(sonList.get(2).toString());
+								}
+								break;
+							case 2://比分
+//								System.out.println(sonList);
+								if(ObjectHelper.isNotEmpty(sonList)) {
+									mvs.setScore10(sonList.get(0).toString());
+									mvs.setScore20(sonList.get(1).toString());
+									mvs.setScore21(sonList.get(2).toString());
+									mvs.setScore30(sonList.get(3).toString());
+									mvs.setScore31(sonList.get(4).toString());
+									mvs.setScore32(sonList.get(5).toString());
+									mvs.setScore40(sonList.get(6).toString());
+									mvs.setScore41(sonList.get(7).toString());
+									mvs.setScore42(sonList.get(8).toString());
+									mvs.setScore50(sonList.get(9).toString());
+									mvs.setScore51(sonList.get(10).toString());
+									mvs.setScore52(sonList.get(11).toString());
+									mvs.setScorewinother(sonList.get(12).toString());
+									mvs.setScore00(sonList.get(13).toString());
+									mvs.setScore11(sonList.get(14).toString());
+									mvs.setScore22(sonList.get(15).toString());
+									mvs.setScore33(sonList.get(16).toString());
+									mvs.setScoredrawother(sonList.get(17).toString());
+									mvs.setScore01(sonList.get(18).toString());
+									mvs.setScore02(sonList.get(19).toString());
+									mvs.setScore12(sonList.get(20).toString());
+									mvs.setScore03(sonList.get(21).toString());
+									mvs.setScore13(sonList.get(22).toString());
+									mvs.setScore23(sonList.get(23).toString());
+									mvs.setScore04(sonList.get(24).toString());
+									mvs.setScore14(sonList.get(25).toString());
+									mvs.setScore24(sonList.get(26).toString());
+									mvs.setScore05(sonList.get(27).toString());
+									mvs.setScore15(sonList.get(28).toString());
+									mvs.setScore25(sonList.get(29).toString());
+									mvs.setScoreloseother(sonList.get(30).toString());
+								}
+								break;
+							case 3: //总进球
+//								System.out.println(sonList);
+								if(ObjectHelper.isNotEmpty(sonList)) {
+									mvs.setZjq0(sonList.get(0).toString());
+									mvs.setZjq1(sonList.get(1).toString());
+									mvs.setZjq2(sonList.get(2).toString());
+									mvs.setZjq3(sonList.get(3).toString());
+									mvs.setZjq4(sonList.get(4).toString());
+									mvs.setZjq5(sonList.get(5).toString());
+									mvs.setZjq6(sonList.get(6).toString());
+									mvs.setZjq7(sonList.get(7).toString());
+								}
+								break;
+							case 4://全半场
+//								System.out.println(sonList);
+								if(ObjectHelper.isNotEmpty(sonList)) {
+									mvs.setQbcss(sonList.get(0).toString());
+									mvs.setQbcsp(sonList.get(1).toString());
+									mvs.setQbcsf(sonList.get(2).toString());
+									mvs.setQbcps(sonList.get(3).toString());
+									mvs.setQbcpp(sonList.get(4).toString());
+									mvs.setQbcpf(sonList.get(5).toString());
+									mvs.setQbcfs(sonList.get(6).toString());
+									mvs.setQbcfp(sonList.get(7).toString());
+									mvs.setQbcff(sonList.get(8).toString());
+								}
+								break;
+							case 5: //胜平负
+//								System.out.println(sonList);
+								mvs.setSpfs(sonList.get(0).toString());
+								mvs.setSpfp(sonList.get(1).toString());
+								mvs.setSpff(sonList.get(2).toString());
+								
+							default:
+								break;
+							}
+						}
+					}
+					
+					//获取队伍和联赛id
+					getSimpleTeamInfo(mvs);
+					
+					if(ObjectHelper.isNotEmpty(mvs.getHometeamid()) && !"0".equals(mvs.getHometeamid())) {
+						getTeamInfo(mvs.getHometeamid());
+					}
+					if(ObjectHelper.isNotEmpty(mvs.getAwayteamid()) && !"0".equals(mvs.getAwayteamid())) {
+						getTeamInfo(mvs.getAwayteamid());	
+					}
+					
+					if("1".equals(mvs.getHometeamid()) || "1".equals(mvs.getAwayteamid()) || "1".equals(mvs.getLeagueid())) {
+						continue;
+					}
+					
+					//页面数据封装完成，开始处理特殊字段
+					if(ObjectHelper.isNotEmpty(mvs.getHomefullname())) {
+						FoMixExample mvsEx = new FoMixExample();
+						mvsEx.createCriteria().andIduniqueEqualTo(mvs.getIdunique());
+						List<FoMix> mvsList = mvsMapper.selectByExample(mvsEx);
+						if(ObjectHelper.isNotEmpty(mvsList)) {
+							mvs.setId(mvsList.get(0).getId());
+							mvs.setIdunique(mvsList.get(0).getIdunique());
+							mvsMapper.updateByPrimaryKeySelective(mvs);
+						} else {
+							mvs.setId(IDUtils.createUUId());
+							mvsMapper.insert(mvs);
+						}
+					}
+				}
+				System.out.println("今日抓取一轮结束");
+			} catch (Exception e) {
+				e.printStackTrace();
+				if(e.getMessage().indexOf("connect") > -1) {
+					try {
+						System.out.println("链接超时，等待5秒钟");
+						Thread.sleep(1000*60*5);
+					} catch (Exception e2) {
+						getJingCaiData();
+					}
+				}
+			}
+		}
+	}
+	
+	/**
+	 * 获取截止时间
+	 * @param startTime
+	 * @return
+	 */
+	public static Date getEndTime(Date startTime) {
+		Date endDate = null;
+		try {
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+			String week = UtilBag.getWeekOfDate(startTime);
+			if("星期一".equals(week) || "星期日".equals(week)) {
+				System.out.println("周1和周7");
+				String st = sdf.format(startTime);
+				if(!StringUtils.isEmpty(st)) {
+					String hm = st.split(" ")[1];
+					String hour = hm.split(":")[0];
+					int hr = Integer.valueOf(hour);
+					if(9<=hr || 1>=hr) {
+						Date afterDate = new Date(startTime .getTime() - 300000);
+						System.out.println(sdf.format(afterDate));
+						endDate = afterDate;
+					} else {
+						String dateStr = st.split(" ")[0] + " 01:00";
+						Date afterDate = sdf.parse(dateStr);
+						afterDate = new Date(afterDate.getTime() - 300000);
+//						System.out.println(sdf.format(afterDate));
+						endDate = afterDate;
+					}
+				}
+			} else {
+				System.out.println("周2至周6");
+				String st = sdf.format(startTime);
+				if(!StringUtils.isEmpty(st)) {
+					String hm = st.split(" ")[1];
+					String hour = hm.split(":")[0];
+					int hr = Integer.valueOf(hour);
+					if(9<=hr) {
+						Date afterDate = new Date(startTime.getTime() - 300000);
+//						System.out.println(sdf.format(afterDate));
+						endDate = afterDate;
+					} else {
+						String dateStr = st.split(" ")[0] + " 00:00";
+						Date afterDate = sdf.parse(dateStr);
+						afterDate = new Date(afterDate.getTime() - 300000);
+//						System.out.println(sdf.format(afterDate));
+						endDate = afterDate;
+					}
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return endDate;
+	}
+	
+	/**
+	 * 获取队伍基本信息
+	 * @param mix
+	 */
+	public static void getSimpleTeamInfo(FoMix mix) {
+		//组装url
+		teamUrl = teamUrl.replace("yy", String.valueOf(System.currentTimeMillis()));
+		teamUrl = teamUrl.replace("xx", mix.getJingcaiid());
+		String html = null;
+		try {
+			CloseableHttpClient httpclient = HttpClients.createDefault();
+			HttpGet httpget = new HttpGet(teamUrl);
+			CloseableHttpResponse response = httpclient.execute(httpget);
+			try {
+            	// 获取响应实体    
+                HttpEntity entity = response.getEntity();  
+                if (entity != null && response.getStatusLine().getStatusCode() == 200) {  
+                	html = UtilBag.handleEntityCharset(entity, "gb2312");
+                	if(ObjectHelper.isNotEmpty(html)) {
+                		JSONObject jsonObject = JSONObject.fromObject(html);
+                		Object result = jsonObject.get("result");
+                		jsonObject = JSONObject.fromObject(result);
+                		String teamIdH = jsonObject.get("h_id_dc").toString();
+                		String teamIdA = jsonObject.get("a_id_dc").toString();
+                		String leagueId = jsonObject.get("l_id_dc").toString();
+                		mix.setHometeamid(teamIdH);
+                		mix.setAwayteamid(teamIdA);
+                		mix.setLeagueid(leagueId);
+                		//拿不到联赛id的特殊处理
+                		if("-1".equals(leagueId) && ObjectHelper.isNotEmpty(teamIdH)) {
+                			planB(mix, teamIdH,teamIdA);
+                		}
+                	}
+                }	
+                teamUrl = "http://i.sporttery.cn/api/fb_match_info/get_match_info?mid=xx&_=yy";
+			} finally {
+				response.close();
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private static void planB(FoMix mix,String teamIdH,String teamIdA) {
+		String incase = "http://i.sporttery.cn/api/fb_match_info/get_team_rec_data?tid=teamIdH&md=year&is_ha=all&limit=10&c_id=0&ptype[]=three_-1&_=timestamp";
+		String date = UtilBag.dateUtil(1);
+		incase = incase.replace("teamIdH", teamIdH).replace("year", date).replace("timestamp", String.valueOf(System.currentTimeMillis()));
+		try {
+			CloseableHttpClient httpclient = HttpClients.createDefault();
+			HttpGet httpget = new HttpGet(incase);
+			CloseableHttpResponse response = httpclient.execute(httpget);
+			try {
+				String html;
+				HttpEntity entity = response.getEntity();  
+                if (entity != null && response.getStatusLine().getStatusCode() == 200) {
+                	html = UtilBag.handleEntityCharset(entity, "gb2312");
+                	if(ObjectHelper.isNotEmpty(html)) {
+                		JSONObject jsonObject = JSONObject.fromObject(html);
+                		Object result = jsonObject.get("result");
+                		jsonObject = JSONObject.fromObject(result);
+                		if(!jsonObject.isEmpty()) {
+                			JSONArray array = jsonObject.getJSONArray("data");
+                    		jsonObject = JSONObject.fromObject(array.get(0));
+                    		String leagueId = jsonObject.get("l_id_dc").toString();
+                    		mix.setLeagueid(leagueId);
+                		}
+                	}
+                }
+			} finally {
+				
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	/**
+	 * 获取队伍详细信息(不包含球员)
+	 */
+	public static void getTeamInfo(String idTeam) {
+		try {
+			teamDetailUrl = teamDetailUrl.replace("xx", idTeam).replace("yy", String.valueOf(System.currentTimeMillis()));
+			CloseableHttpClient httpclient = HttpClients.createDefault();
+			HttpGet httpget = new HttpGet(teamDetailUrl);
+			CloseableHttpResponse response = httpclient.execute(httpget);
+			String html = "";
+			try {
+				HttpEntity entity = response.getEntity();  
+                if (entity != null && response.getStatusLine().getStatusCode() == 200) {  
+                	html = UtilBag.handleEntityCharset(entity, "gbk");
+                	if(ObjectHelper.isNotEmpty(html)) {
+                		JSONObject jsonObject = JSONObject.fromObject(html);
+                		Object result = jsonObject.get("result");
+                		if(ObjectHelper.isEmpty(result)) {
+                			System.out.println();
+                			return;
+                		}
+                		System.out.println(result.toString());//测试通过前留着
+                		jsonObject = JSONObject.fromObject(result);
+                		FoTeam teamInfo = new FoTeam();
+                		if(ObjectHelper.isEmpty(jsonObject.get("team_id"))) {
+                			System.out.println();
+                			return;
+                		}
+                		teamInfo.setIdteam(jsonObject.get("team_id").toString());
+                		teamInfo.setFullnameteam(jsonObject.get("club_name").toString());
+                		teamInfo.setShortnameteam(jsonObject.get("club_abbr_name").toString());
+                		teamInfo.setCity(jsonObject.get("team_city").toString());
+                		teamInfo.setType(jsonObject.get("type").toString());
+                		teamInfo.setEsttimeteam(jsonObject.get("team_founded").toString());
+                		teamInfo.setLogoteamurl(jsonObject.get("team_pic").toString());
+                		if(teamInfo.getIdteam().equals("35583")) {
+                			System.out.println(teamInfo.getIdteam());
+                		}
+                		
+                		if(ObjectHelper.isNotEmpty(jsonObject.get("venue"))) {
+                			if(ObjectHelper.isNotEmpty(JSONObject.fromObject(jsonObject.get("venue")))) {
+	                			@SuppressWarnings("rawtypes")
+								Iterator it = JSONObject.fromObject(jsonObject.get("venue")).keys();
+	                			String key = "";
+	                			while(it.hasNext()) {
+	                				key = String.valueOf(it.next());
+	                			}
+	                			Object venue = JSONObject.fromObject(jsonObject.get("venue")).get(key);
+	                			teamInfo.setCourtname(JSONObject.fromObject(venue).get("venue_name").toString());
+	                			teamInfo.setCapacity(JSONObject.fromObject(venue).get("capacity").toString());
+	                		}
+                		}
+                		
+                		FoTeamExample teamEx = new FoTeamExample();
+                		teamEx.createCriteria().andIdteamEqualTo(jsonObject.get("team_id").toString());
+                		List<FoTeam> teamList = teamMapper.selectByExample(teamEx);
+                		if(ObjectHelper.isNotEmpty(teamList) && teamList.size() == 1) {
+                			teamInfo.setId(teamList.get(0).getId());
+                			teamMapper.updateByPrimaryKey(teamInfo);
+                		} else {
+                			teamInfo.setId(IDUtils.createUUId());
+                			teamMapper.insert(teamInfo);
+                		}
+                	}
+                }	
+			} finally {
+				response.close();
+			}
+			teamDetailUrl = "http://i.sporttery.cn/api/fb_match_info/get_team_data/?tid=xx&_=yy";
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public static void main(String[] args) throws ParseException {
+		long startTime = System.currentTimeMillis();
+//		while(true) {
+			try {
+				getJingCaiData();
+				getFullJson();
+//				System.out.println("一圈睡2分钟************************************");
+//				Thread.sleep(1000*60*2);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+//		}
+		long endTime = System.currentTimeMillis();
+		System.out.println("程序运行时间：" + (endTime - startTime) + "ms");
+		System.out.println("程序运行时间：" + (endTime - startTime) /1000 /60 + "m");
+	}
+}

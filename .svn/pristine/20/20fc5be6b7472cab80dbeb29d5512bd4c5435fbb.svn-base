@@ -1,0 +1,217 @@
+package com.kprd.date.fetch.jingcai.football;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+
+import org.apache.http.HttpEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+
+import com.kprd.common.utils.IDUtils;
+import com.kprd.common.utils.ObjectHelper;
+import com.kprd.date.lq.update.Main;
+import com.kprd.date.util.UtilBag;
+import com.kprd.newliansai.mapper.FoMixMapper;
+import com.kprd.newliansai.mapper.FoOtherdataMapper;
+import com.kprd.newliansai.pojo.FoMix;
+import com.kprd.newliansai.pojo.FoMixExample;
+import com.kprd.newliansai.pojo.FoOtherdata;
+import com.kprd.newliansai.pojo.FoOtherdataExample;
+
+import net.sf.json.JSONObject;
+
+public class OtherData {
+	//连胜
+	private static String comboWinUrl = "http://smart.wowcai.cn/api/method.go?typeid=3&cid=24";
+	//伤停
+	private static String woundedUrl = "http://smart.wowcai.cn/api/method.go?typeid=4&cid=24";
+	//探求
+	private static String tqUrl = "http://smart.wowcai.cn/api/method.go?typeid=7&cid=24";
+	//人气
+	private static String popularity = "http://smart.wowcai.cn/api/method.go?typeid=6&cid=24";
+	
+	static FoOtherdataMapper otherdataMapper = Main.applicationContext.getBean(FoOtherdataMapper.class);
+	
+	static FoMixMapper mixMapper = Main.applicationContext.getBean(FoMixMapper.class);
+	
+	private static void getCombo() {
+		String html = null;
+		try {
+			CloseableHttpClient httpclient = HttpClients.createDefault();
+			HttpGet httpget = new HttpGet(comboWinUrl);
+			CloseableHttpResponse response = httpclient.execute(httpget);
+			try {
+				HttpEntity entity = response.getEntity();  
+                if (entity != null && response.getStatusLine().getStatusCode() == 200) {
+                	//utf-8的特殊情况，特殊处理
+                	html = UtilBag.handleEntityCharset(entity, "gb2312");
+                	html = "{" + html.substring(2,html.length());
+                	html = UtilBag.unicode2String(html);
+                	//连胜
+                	JSONObject jsonObj = JSONObject.fromObject(html);
+                	//伤病
+                	JSONObject woundJson = getWound();
+                	//探求指数
+                	JSONObject tqJson = getTqUrl();
+                	//人气
+                	JSONObject popJson = getPop();
+                	
+                	FoMixExample fmEx = new FoMixExample();
+        			String day = UtilBag.dateUtil(0);
+        			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        			String today = day + " 11:59:59";
+        			Date kyo = sdf.parse(today);
+        			fmEx.createCriteria().andStarttimeGreaterThan(kyo);
+        			fmEx.setOrderByClause(" idUnique asc");
+        			List<FoMix> mvsList = mixMapper.selectByExample(fmEx);
+        			System.out.println("今天" + mvsList.size() + "场比赛");
+        			for(FoMix mix : mvsList) {
+        				String idUnique = mix.getIdunique();
+        				String front = idUnique.substring(0, 8);
+        				String back = idUnique.substring(9,idUnique.length());
+        				String idOther = front + back;
+        				System.out.println(idOther);
+        				if("20170913010".equals(idOther)) {
+        					System.out.println(123);
+        				}
+        				FoOtherdataExample otherEx = new FoOtherdataExample();
+        				otherEx.createCriteria().andIduniqueotherEqualTo(idUnique);
+        				List<FoOtherdata> otherList = otherdataMapper.selectByExample(otherEx);
+        				FoOtherdata other = new FoOtherdata();
+        				if(ObjectHelper.isNotEmpty(jsonObj.get(idOther))) {
+        					other.setCombohome(JSONObject.fromObject(jsonObj.get(idOther)).get("home").toString());
+        					other.setComboaway(JSONObject.fromObject(jsonObj.get(idOther)).get("away").toString());
+        				}
+        				if(ObjectHelper.isNotEmpty(woundJson.get(idOther))) {
+        					other.setWoundhome(JSONObject.fromObject(woundJson.get(idOther)).get("home").toString());
+        					other.setWoundaway(JSONObject.fromObject(woundJson.get(idOther)).get("away").toString());
+        				}
+    					if(ObjectHelper.isNotEmpty(tqJson.get(idOther))) {
+    						other.setTqhome(JSONObject.fromObject(tqJson.get(idOther)).get("home").toString());
+        					other.setTqdraw(JSONObject.fromObject(tqJson.get(idOther)).get("draw").toString());
+        					other.setTqaway(JSONObject.fromObject(tqJson.get(idOther)).get("away").toString());
+    					}
+    					if(ObjectHelper.isNotEmpty(popJson.get(idOther))) {
+    						other.setPophome(JSONObject.fromObject(popJson.get(idOther)).get("home").toString());
+        					other.setPopdraw(JSONObject.fromObject(popJson.get(idOther)).get("draw").toString());
+        					other.setPopaway(JSONObject.fromObject(popJson.get(idOther)).get("away").toString());
+    					}
+    					other.setSp1(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(mix.getStarttime()));
+    					other.setIduniqueother(idUnique);
+        				if(ObjectHelper.isEmpty(otherList)) {
+        					other.setIdother(IDUtils.createUUId());
+        					otherdataMapper.insert(other);
+        				} else {
+        					other.setIdother(otherList.get(0).getIdother());
+        					otherdataMapper.updateByPrimaryKeySelective(other);
+        				}
+        			}
+                }
+			} finally {
+				response.close();
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	/**
+	 * 获取伤病
+	 * @return
+	 */
+	public static JSONObject getWound() {
+		JSONObject result = null;
+		String html = null;
+		try {
+			CloseableHttpClient httpclient = HttpClients.createDefault();
+			HttpGet httpget = new HttpGet(woundedUrl);
+			CloseableHttpResponse response = httpclient.execute(httpget);
+			try {
+				HttpEntity entity = response.getEntity();  
+                if (entity != null && response.getStatusLine().getStatusCode() == 200) {
+                	//utf-8的特殊情况，特殊处理
+                	html = UtilBag.handleEntityCharset(entity, "gb2312");
+                	html = "{" + html.substring(2,html.length());
+                	html = UtilBag.unicode2String(html);
+                	JSONObject jsonObj = JSONObject.fromObject(html);
+                	result = jsonObj;
+                }
+			} finally {
+				
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return result;
+	}
+	
+	/**
+	 * 探求指数
+	 * @return
+	 */
+	public static JSONObject getTqUrl() {
+		JSONObject result = null;
+		String html = null;
+		try {
+			CloseableHttpClient httpclient = HttpClients.createDefault();
+			HttpGet httpget = new HttpGet(tqUrl);
+			CloseableHttpResponse response = httpclient.execute(httpget);
+			try {
+				HttpEntity entity = response.getEntity();  
+                if (entity != null && response.getStatusLine().getStatusCode() == 200) {
+                	//utf-8的特殊情况，特殊处理
+                	html = UtilBag.handleEntityCharset(entity, "gb2312");
+                	html = "{" + html.substring(2,html.length());
+                	html = UtilBag.unicode2String(html);
+                	JSONObject jsonObj = JSONObject.fromObject(html);
+                	result = jsonObj;
+                }
+			} finally {
+				
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return result;
+	}
+	
+	/**
+	 * 人气
+	 * @return
+	 */
+	public static JSONObject getPop() {
+		JSONObject result = null;
+		String html = null;
+		try {
+			CloseableHttpClient httpclient = HttpClients.createDefault();
+			HttpGet httpget = new HttpGet(popularity);
+			CloseableHttpResponse response = httpclient.execute(httpget);
+			try {
+				HttpEntity entity = response.getEntity();  
+                if (entity != null && response.getStatusLine().getStatusCode() == 200) {
+                	//utf-8的特殊情况，特殊处理
+                	html = UtilBag.handleEntityCharset(entity, "gb2312");
+                	html = "{" + html.substring(2,html.length());
+                	html = UtilBag.unicode2String(html);
+                	JSONObject jsonObj = JSONObject.fromObject(html);
+                	result = jsonObj;
+                }
+			} finally {
+				
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return result;
+	}
+	
+	public static void main(String[] args) {
+		getCombo();
+//		getWound();
+//		getTqUrl();
+//		getPop();
+	}
+}

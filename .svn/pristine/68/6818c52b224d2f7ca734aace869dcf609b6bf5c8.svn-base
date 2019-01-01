@@ -1,0 +1,542 @@
+package com.kprd.date.util;
+
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.Closeable;
+import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.ConnectException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+import java.util.zip.GZIPInputStream;
+
+import org.apache.http.HttpEntity;
+import org.htmlparser.Parser;
+import org.htmlparser.filters.TagNameFilter;
+import org.htmlparser.util.NodeList;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.springframework.util.StringUtils;
+
+import com.kprd.common.utils.ObjectHelper;
+
+import net.sf.json.JSONObject;
+
+/**
+ * 工具包
+ * @author Administrator
+ *
+ */
+public class UtilBag {
+	
+	/**
+     * 将二进制数组保存到指定物理文件.
+     * 
+     * @param bytes
+     * @param file
+     * @return boolean true: 保存成功; false: 保存失败.
+     */
+    public static boolean toFile(byte[] bytes, File file) {
+        BufferedOutputStream bos = null;
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream(file);
+            bos = new BufferedOutputStream(fos);
+            bos.write(bytes);
+            return true;
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+           close(bos);
+           close(fos);
+        }
+        return false;
+    }
+    
+    /**
+     * 静默关闭实现 Closeable 接口的对象.<br/>
+     * 具体有: Nio Channel、 IO InputStream、 IO OutputStream、 IO Reader、 IO Writer
+     * 
+     * @param closeables 实现 Closeable 接口的对象.
+     */
+    public static void close(Closeable... closeables) {
+        if (null != closeables) {
+            for (Closeable clob : closeables) {
+                try {
+                    if (null != clob) {
+                        clob.close();
+                    }
+                } catch (Throwable e) {
+                	
+                }
+            }
+        }
+    }
+    
+    /**
+     * 处理httpEntity转化为String时的乱码问题
+     * @param entity
+     * @return
+     */
+	public static String handleEntityCharset(HttpEntity entity, String charset) {
+    	StringBuilder result = new StringBuilder();//响应正文
+    	try {
+            if (entity != null) {
+                InputStream instream = entity.getContent();
+                byte[] bytes = new byte[4096];
+                int size = 0;
+                try {
+                    while ((size = instream.read(bytes)) > 0) {
+                        String str = new String(bytes, 0, size, charset);
+                        result.append(str);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        instream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+            //保存到本地
+//            toFile(result.toString().getBytes(), new File("C:\\Users\\Administrator\\Desktop\\fetch\\123.txt"));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+    	return result.toString();
+    }
+    
+    /**
+     * 日期天数加减，传入+or-数字，返回当前日期加减参数后的日期字符串
+     * @param num
+     * @return
+     */
+    public static String dateUtil(int num) {
+    	Date date = new Date();
+		Calendar calendar = Calendar.getInstance();
+		calendar.setTime(date);
+		calendar.add(Calendar.DAY_OF_MONTH, num);
+		date = calendar.getTime();
+		SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");//设置日期格式
+		return df.format(date);
+    }
+    
+    /**
+     * 日期天数加减，传入+or-数字，返回当前日期加减参数后的日期字符串
+     * @param num
+     * @return
+     */
+    public static String dateUtilWithDate(int num,Date date) {
+    	Calendar calendar = Calendar.getInstance();
+    	calendar.setTime(date);
+    	calendar.add(Calendar.DAY_OF_MONTH, num);
+    	date = calendar.getTime();
+    	SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");//设置日期格式
+    	return df.format(date);
+    }
+    
+    /**
+	 * 下载图片
+	 * @param urlList 文件网络地址
+	 * @param imageName 文件下载地址
+	 */
+	public static void downloadPicture(String urlList, String imageName) {  
+        URL url = null;  
+            try {  
+                url = new URL(urlList);  
+                DataInputStream dataInputStream = new DataInputStream(url.openStream());  
+                File file = new File(imageName).getParentFile();
+                if (file.exists()) {
+        		} else {
+        			file.mkdirs();
+        		}
+                FileOutputStream fileOutputStream = new FileOutputStream(new File(imageName));  
+  
+                byte[] buffer = new byte[1024];  
+                int length;  
+  
+                while ((length = dataInputStream.read(buffer)) > 0) {  
+                    fileOutputStream.write(buffer, 0, length);  
+                }  
+  
+                dataInputStream.close();  
+                fileOutputStream.close();  
+            } catch (MalformedURLException e) {  
+                e.printStackTrace();  
+            } catch (IOException e) {  
+                e.printStackTrace();  
+            }  
+    }
+	
+	/**
+	 * GZIP专用
+	 * @param uri
+	 * @param charset
+	 * @return
+	 */
+	public static String getHtmlForGZIP(String uri,String charset) {
+		String html = null;
+		try {
+			URL url = new URL(uri);
+	        URLConnection conn = url.openConnection();
+	        conn.connect();
+	        GZIPInputStream gzipIs = new GZIPInputStream(conn.getInputStream());
+	        InputStreamReader isr = new InputStreamReader(gzipIs, charset);
+	        StringBuilder sb = new StringBuilder();
+	        char[] cbuf = new char[1024];
+	        @SuppressWarnings("unused")
+			int len = 0;
+	        while ((len = isr.read(cbuf)) != -1) {
+	            sb.append(cbuf);
+	        }
+	        gzipIs.close();
+	        isr.close();
+	        html = sb.toString();
+//	        toFile(html.getBytes(), new File("C:\\Users\\Administrator\\Desktop\\fetch\\gzip.txt"));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return html;
+	}
+	
+	/**
+	 * 穿url返回jsonObject
+	 * @param requestUrl
+	 * @param requestMethod
+	 * @param outputStr
+	 * @return
+	 */
+	public static JSONObject httpRequestForJson(String requestUrl, String requestMethod, String outputStr) {    
+        JSONObject jsonObject = null;    
+        StringBuffer buffer = new StringBuffer();  
+        InputStream inputStream=null;  
+        try {  
+            URL url = new URL(requestUrl);  
+            HttpURLConnection httpUrlConn = (HttpURLConnection) url.openConnection();    
+            httpUrlConn.setDoOutput(true);    
+            httpUrlConn.setDoInput(true);    
+            httpUrlConn.setUseCaches(false);  
+            // 设置请求方式（GET/POST）    
+            httpUrlConn.setRequestMethod(requestMethod);    
+            if ("GET".equalsIgnoreCase(requestMethod))    
+                httpUrlConn.connect();    
+    
+            // 当有数据需要提交时    
+            if (null != outputStr) {    
+                OutputStream outputStream = httpUrlConn.getOutputStream();    
+                // 注意编码格式，防止中文乱码    
+                outputStream.write(outputStr.getBytes("UTF-8"));    
+                outputStream.close();    
+            }  
+            //将返回的输入流转换成字符串    
+            inputStream = httpUrlConn.getInputStream();    
+            InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "utf-8");    
+            BufferedReader bufferedReader = new BufferedReader(inputStreamReader);    
+    
+            String str = null;    
+            while ((str = bufferedReader.readLine()) != null) {    
+                buffer.append(str);    
+            }    
+            bufferedReader.close();    
+            inputStreamReader.close();    
+            // 释放资源    
+            inputStream.close();    
+            inputStream = null;    
+            httpUrlConn.disconnect();    
+          jsonObject = JSONObject.fromObject(buffer.toString());  
+        } catch (ConnectException ce) {    
+              ce.printStackTrace();  
+              System.out.println("Weixin server connection timed out");  
+        } catch (Exception e) {    
+               e.printStackTrace();  
+               System.out.println("http request error:{}");  
+        }finally{  
+            try {  
+                if(inputStream!=null){  
+                    inputStream.close();  
+                }  
+            } catch (IOException e) {  
+                e.printStackTrace();  
+            }  
+        }   
+        return jsonObject;    
+    }
+	
+	/**
+	 * 传入日期返回星期
+	 * @param dt
+	 * @return
+	 */
+	public static String getWeekOfDate(Date dt) {
+        String[] weekDays = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(dt);
+        int w = cal.get(Calendar.DAY_OF_WEEK) - 1;
+        if (w < 0)
+            w = 0;
+        return weekDays[w];
+    }
+	
+	/**
+     * 根据url获取doc对象
+     * @param url
+     * @return
+     */
+    public static Document getDocumentByUrl(String url) {
+    	Document doc = null;
+    	try {
+    		Parser parser = new Parser();
+    		parser.setEncoding(parser.getEncoding());
+    		parser.setURL(url);
+    		TagNameFilter filter = new TagNameFilter("html");
+    		NodeList list = parser.parse(filter);
+    		String html = list.toHtml();
+    		toFile(html.getBytes(), new File("C:\\Users\\Administrator\\Desktop\\fetch\\123.txt"));
+    		doc = Jsoup.parse(html);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+    	return doc;
+    }
+    
+    /**
+	 * 获取汉子对应星期数字
+	 * @param chinese 
+	 * @return
+	 */
+	public static String getWeekDay(String chinese) {
+		String day = null;
+		if(!StringUtils.isEmpty(chinese)) {
+			if("日".equals(chinese)) {
+				day = "7";
+			} else if("一".equals(chinese)) {
+				day = "1";
+			} else if("二".equals(chinese)) {
+				day = "2";
+			} else if("三".equals(chinese)) {
+				day = "3";
+			} else if("四".equals(chinese)) {
+				day = "4";
+			} else if("五".equals(chinese)) {
+				day = "5";
+			} else if("六".equals(chinese)) {
+				day = "6";
+			}
+		}
+		return day;
+	}
+	
+	/**
+	 * 读取页面txt文件
+	 * @param filePath
+	 * @return
+	 */
+	public static String readTxtFile(String filePath){
+		StringBuffer sb = new StringBuffer();
+        try {
+                String encoding="gbk";
+                File file=new File(filePath);
+                if(file.isFile() && file.exists()){ //判断文件是否存在
+                    InputStreamReader read = new InputStreamReader(
+                    new FileInputStream(file),encoding);//考虑到编码格式
+                    BufferedReader bufferedReader = new BufferedReader(read);
+                    String lineTxt = null;
+                    while((lineTxt = bufferedReader.readLine()) != null){
+                    	sb.append(lineTxt);
+                    	sb.append("\n");
+                    }
+                    read.close();
+        }else{
+            System.out.println("找不到指定的文件");
+        }
+        } catch (Exception e) {
+            System.out.println("读取文件内容出错");
+            e.printStackTrace();
+        }
+        return sb.toString();
+    }
+	
+	/**
+	 * 设置ini
+	 * @param filePath
+	 */
+	public static void setIni(String filePath) {
+		List<String> list = new ArrayList<String>();
+        try {
+                String encoding="GBK";
+                File file=new File(filePath);
+                if(file.isFile() && file.exists()){ //判断文件是否存在
+                    InputStreamReader read = new InputStreamReader(
+                    new FileInputStream(file),encoding);//考虑到编码格式
+                    BufferedReader bufferedReader = new BufferedReader(read);
+                    String lineTxt = null;
+                    while((lineTxt = bufferedReader.readLine()) != null){
+                    	list.add(lineTxt);
+                    }
+                    read.close();
+		    }else{
+		        System.out.println("找不到指定的文件");
+		    }
+		    if(ObjectHelper.isNotEmpty(list) && list.size() == 4) {
+		    	if("是否开启=0".equals(list.get(2))) {
+		    		File file2 = new File("C:/Users/Administrator/Desktop/smallTool");
+		    		createFile(file2, list);
+		    	}
+		    }
+        } catch (Exception e) {
+            System.out.println("读取文件内容出错");
+            e.printStackTrace();
+        }
+	}
+	
+	/**
+	 * 写入ini
+	 * @param fileName
+	 * @throws Exception
+	 */
+	public static void createFile(File fileName,List<String> list)throws Exception{  
+
+	   File file = new File("C:/Users/Administrator/Desktop/smallTool/config.ini");
+
+	   if (!file.exists()) {
+	    file.createNewFile();
+	   }
+	   FileWriter fw = new FileWriter(file.getAbsoluteFile());
+	   BufferedWriter bw = new BufferedWriter(fw);
+	   for(int i=0;i<list.size();i++) {
+		   if(i==list.size()-1) {
+			   bw.write(list.get(i));
+		   } else if(i==2) {
+			   bw.write("是否开启=1");
+			   bw.newLine();
+		   } else {
+			   bw.write(list.get(i));
+			   bw.newLine();  
+		   }
+	   }
+	   bw.close();
+
+	   System.out.println("Done");
+	 } 
+	
+	/**
+	 * unicode 转字符串
+	 */
+	public static String unicode2String(String unicode) {
+	 
+	    while(unicode.indexOf("\\u") > -1) {
+	    	String ucode = unicode.substring(unicode.indexOf("\\u")+2,unicode.indexOf("\\u")+6);
+	    	int data = Integer.parseInt(ucode, 16);
+	    	char newChar = (char) data;
+	    	unicode = unicode.replace("\\u" + ucode, String.valueOf(newChar));
+	    }
+	    return unicode;
+	}
+	/**
+	 * 验证参数是否是数字
+	 * @param str
+	 * @return
+	 */
+	public static boolean isNumber(String str){  
+        String reg = "^[0-9]+(.[0-9]+)?$";  
+        return str.matches(reg);  
+    }  
+	
+	/**
+	 * 请求页面
+	 * @param urlStr
+	 * @param charset
+	 * @return
+	 */
+	public static String urlFetch(String urlStr,String charset) {
+		String html = "";
+        @SuppressWarnings("unused")
+		int i = 0;  
+        StringBuffer sb = new StringBuffer("");  
+        URL url;  
+        try {  
+            url = new URL(urlStr);  
+            BufferedReader br = new BufferedReader(new InputStreamReader(url.openStream(), charset));  
+            String s = "";  
+            while ((s = br.readLine()) != null) {  
+                i++;  
+                sb.append(s + "\r\n");  
+            }  
+        } catch (Exception e) {  
+            e.printStackTrace();  
+        }  
+        html = sb.toString();
+        if(ObjectHelper.isNotEmpty(sb.toString())) {
+    		return html;
+    	}
+        return sb.toString();  
+    }
+	
+	/**
+	 * 通过历史页面获取idunique
+	 * @param date
+	 * @param num
+	 * @return
+	 */
+	public static String getRightDate(String date,String num) {
+		String rightDate = null;
+		try {
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+			String w = UtilBag.getWeekOfDate(sdf.parse(date));
+			w = w.substring(2,3);
+			w = UtilBag.getWeekDay(w);
+			if(num.equals(w)) {
+				rightDate = date;
+				return rightDate;
+			} else {
+				rightDate = UtilBag.dateUtilWithDate(-1, sdf.parse(date));
+				getRightDate(rightDate, num);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return rightDate;
+	}
+	
+	public static void main(String[] args) {
+		try {
+			isNumber("平手/半球");
+			//读取
+//			String html = readTxtFile("C:/Users/Administrator/Desktop/smallTool/code.txt");
+			//写入
+//			setIni("C:/Users/Administrator/Desktop/smallTool/config.ini");
+//			IniFile file2 = new IniFile();
+//			file2.setCharSet("ucs-2");
+//			file2.set("配置", "URL", "http://trade.500.com/jczq/index.php?playid=312&date=2017-06-22");  
+//	        file2.set("配置", "是否开启", "1");  
+//	        file2.set("配置", "结果", "已返回");  
+//	        file2.save(new File("C:\\Users\\Administrator\\Desktop\\smallTool\\config.ini")); 
+			
+			
+//			toFile(html.getBytes(), new File("C:\\Users\\Administrator\\Desktop\\fetch\\123.txt"));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+}

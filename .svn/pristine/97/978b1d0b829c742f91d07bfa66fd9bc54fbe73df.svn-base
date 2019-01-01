@@ -1,0 +1,140 @@
+package com.kprd.date.lq.match;
+
+import org.jsoup.nodes.Document;
+import org.jsoup.select.Elements;
+
+import com.kprd.date.util.DocumetUtil;
+
+/***
+ * 篮球对阵信息录入
+ * @author Administrator
+ *
+ */
+public class LqGameDate {
+    /**篮球赛事对战*/
+	private static String lq_game = "http://trade.500.com/jclq/index.php?playid=313&date=";
+	/**篮球*/
+	private static String lq_team = "http://liansai.500.com/lq/366/team/";
+
+	/**
+	 * 抓取历史对阵信息
+	 * @param btime 抓取开始日期
+	 * @param etime 抓取结束日期
+	 */
+	public static void getHistoryGame(String btime,String etime) {
+		Document doc = DocumetUtil.getDocumentByUrl(lq_game+btime);
+		Elements elements = doc.select("#vsTable");
+		Elements es = elements.get(0).children();
+		//System.out.println(es);
+		if(null != es && es.size() > 0) {
+			for(int i=0;i<es.size();i++) {
+				Elements games_tb =es.get(i).select(".dc_tb_lq");
+				for(int e=0;e<games_tb.size();e++) {
+					Elements games_tr = games_tb.get(e).select("tr");
+					//System.out.println();
+					for (int f=0;f<games_tr.size();f++) {
+						String isend = games_tr.get(f).select("tr").attr("isend");
+						if(isend.equals("0")) {
+							String guestteam = games_tr.get(f).select("tr").attr("guestteam");
+							String hometeam = games_tr.get(f).select("tr").attr("hometeam");
+							String round = games_tr.get(f).select("tr").attr("pname");
+							String matchid = games_tr.get(f).select("tr").attr("fid");
+							String matchName = games_tr.get(f).select("tr").attr("lg");
+							String color = games_tr.get(f).select("tr > .dc_tb_bgred").attr("style");
+							String[] matchColors = color.split(";");
+							String matchColor = matchColors[0].substring(matchColors[0].indexOf(":")+1);
+							String roundName = games_tr.get(f).select("tr > .dc_tb_bgred .game_time").text().trim();
+							String endtime = games_tr.get(f).select("tr > .h_bb_1px .endtime").attr("title").trim();
+							String matchtime = games_tr.get(f).select("tr > .h_bb_1px .matchtime").attr("title").trim();
+							endtime = endtime.substring(endtime.indexOf("：")+1);
+							matchtime = matchtime.substring(matchtime.indexOf("：")+1);
+							String bf = games_tr.get(e).select("tr > .h_bb_1px").get(3).select("a").text();
+							String avgOWinOdds = games_tr.get(f).select("tr > .h_bb_1px").get(4).select(".pjpl > li").get(0).text().trim();
+							String avgOLostOdds = games_tr.get(f).select("tr > .h_bb_1px").get(4).select(".pjpl > li").get(1).text().trim();
+					
+							//收集赔率信息 根据状态不同 插入不同字段
+							
+							
+							System.out.println(guestteam);
+							System.out.println(hometeam);
+							System.out.println(round);
+							System.out.println(matchid);
+							System.out.println(matchName);
+							System.out.println(color);
+							System.out.println(matchColor);
+							System.out.println(roundName);
+							System.out.println(endtime);
+							System.out.println(matchtime);
+							System.out.println(bf);
+							System.out.println(avgOWinOdds);
+							System.out.println(avgOLostOdds);
+							System.out.println(">>>>>>>>>>>>>>>>>>>>>>>");
+						}
+					}
+					
+					//System.out.println(games_tr.get(e)+"..........");
+					//String guestteam = games_tr.get(e).select("tr").attr("guestteam");
+					//String hometeam = games_tr.get(e).select("tr").attr("hometeam");
+					//String round = games_tr.get(e).select("tr").attr("pname");
+					//String matchid = games_tr.get(e).select("tr").attr("fid");
+					//String matchName = games_tr.get(e).select("tr").attr("lg");
+					//String color = games_tr.get(e).select("tr > .dc_tb_bgred").attr("style");
+					/*String[] matchColors = color.split(";");
+					String matchColor = matchColors[0].substring(matchColors[0].indexOf(":")+1);
+					String roundName = games_tr.get(e).select("tr > .dc_tb_bgred .game_time").text().trim();
+					String endtime = games_tr.get(e).select("tr > .h_bb_1px .endtime").attr("title").trim();
+					String matchtime = games_tr.get(e).select("tr > .h_bb_1px .matchtime").attr("title").trim();
+					endtime = endtime.substring(endtime.indexOf("：")+1);
+					matchtime = matchtime.substring(matchtime.indexOf("：")+1);
+					String bf = games_tr.get(e).select("tr > .h_bb_1px").get(3).select("a").text();
+					String avgOWinOdds = games_tr.get(e).select("tr > .h_bb_1px").get(4).select(".pjpl > li").get(0).text().trim();
+					String avgOLostOdds = games_tr.get(e).select("tr > .h_bb_1px").get(4).select(".pjpl > li").get(1).text().trim();*/
+					//String hometeam = games_tr.get(e).select("tr").attr("hometeam");
+					//String hometeam = games_tr.get(e).select("tr").attr("hometeam");
+					//String hometeam = games_tr.get(e).select("tr").attr("hometeam");
+					//String hometeam = games_tr.get(e).select("tr").attr("hometeam");
+					/*String sf_name_all =  games_tr.get(e).select("tr > .dc_tb_bg").get(0).select(".game_outcome").text().trim();
+					String sf_name = games_tr.get(e).select("tr > .dc_tb_bg").get(0).select(".game_outcome strong").text().trim();
+					String sf_odds = sf_name_all.replaceAll(sf_name, "");
+					
+					String rfsf_name_all =  games_tr.get(e).select("tr > .dc_tb_bg").get(1).select(".game_outcome").text().trim();
+					String rfsf_name = games_tr.get(e).select("tr > .dc_tb_bg").get(1).select(".game_outcome strong").text().trim();
+					String rfsf_odds = rfsf_name_all.replaceAll(rfsf_name, "");
+					
+					String dxf_name_all =  games_tr.get(e).select("tr > .dc_tb_bg").get(2).select(".game_outcome").text().trim();
+					String dxf_name = games_tr.get(e).select("tr > .dc_tb_bg").get(2).select(".game_outcome strong").text().trim();
+					String dxf_odds = dxf_name_all.replaceAll(dxf_name, "");
+					
+					String sfx_name_all =  games_tr.get(e).select("tr > .dc_tb_bg").get(3).select(".game_outcome").text().trim();
+					String sfx_name = games_tr.get(e).select("tr > .dc_tb_bg").get(3).select(".game_outcome strong").text().trim();
+					String sfx_odds = sfx_name_all.replaceAll(sfx_name, "");*/
+					
+					
+					/*System.out.println(matchColor);
+					System.out.println(round);
+					System.out.println(roundName);
+					System.out.println(endtime);
+					System.out.println(matchtime);
+					System.out.println(bf);
+					System.out.println(avgOWinOdds);
+					System.out.println(avgOLostOdds);
+					System.out.println(sf_name);
+					System.out.println(sf_odds);
+					System.out.println(rfsf_name);
+					System.out.println(rfsf_odds);
+					System.out.println(dxf_name);
+					System.out.println(dxf_odds);
+					System.out.println(sfx_name);
+					System.out.println(sfx_odds);*/
+					
+				}
+			}
+		}
+		
+	}
+	
+	public static void main(String[] args) {
+		String btime = "2017-02-09";
+		LqGameDate.getHistoryGame(btime, null);
+	}
+}
